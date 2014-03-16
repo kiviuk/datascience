@@ -1,12 +1,16 @@
 package datascience
 
 import util.Random._
+import scala.None
+import scala.xml.dtd.SystemID
+import scala.collection.concurrent.RDCSS_Descriptor
 
 object Perceptron {
 
-  val w = (0,0,0)
+  val maxHistoricalDataPoints = 10
+  var w: (Double, Double, Double) = (0,0,0)
 
-  implicit class TuppleScalarMulti[A: Numeric](t: (A, A, A)) {
+  implicit class TuppleMulti[A: Numeric](t: (A, A, A)) {
     import Numeric.Implicits._
     def * (p: (A, A, A)) = {
       val v1 = p._1 * t._1
@@ -14,6 +18,28 @@ object Perceptron {
       val v3 = p._3 * t._3
       v1 + v2 + v3
     }
+    def + (p: (A, A, A)) = {
+      val v1 = p._1 + t._1
+      val v2 = p._2 + t._2
+      val v3 = p._3 + t._3
+      (v1, v2, v3)
+    }
+    def * (p:A) = {
+      val v1 = p * t._1
+      val v2 = p * t._2
+      val v3 = p * t._3
+      (v1, v2, v3)
+    }
+  }
+
+  def loopWhile = loop(Int.MaxValue)_
+  def loop(n: Int)(cont: => Boolean)(action : => Unit): Int = {
+    var loopCount = 0
+    while(cont && loopCount < n) {
+      action
+      loopCount += 1
+    }
+    loopCount
   }
 
   // Assume X = [-1;1] x [-1;1] with uniform probability of picking each x € X
@@ -23,8 +49,8 @@ object Perceptron {
     (randomDouble, randomDouble)
   }
 
-  val randomPoint1 = randomPoint()
-  val randomPoint2 = randomPoint()
+  val randomPoint1 = (-1, -1)//randomPoint()
+  val randomPoint2 = (1,1)//randomPoint()
 
   // In each run, choose a random line in the plane as your target function f (do this by taking two random, uniformly distributed points
   // in [1;-1] x [-1;1] and taking the line passing through them), where one side of the line maps to +1 and the other maps  to  1.
@@ -37,13 +63,57 @@ object Perceptron {
     val b = y1 - m * x1
     x * m + b
   }
-
   val classificationFunction = (point:(Double,Double)) => math.signum( point._2 - targetFunctionF(point._1) )
+
   val randomTrainingPoints: Int => Seq[(Double,Double)] = (n: Int) => Stream.continually(randomPoint()).take(n).toSeq
   val historicalDataFunction = (n: Int) => randomTrainingPoints(n).map( (x:(Double,Double)) => (x,classificationFunction(x)) )
-  val historicalData = historicalDataFunction(10)
+  val historicalData = historicalDataFunction(maxHistoricalDataPoints)
+
+  val missClassifiedPoints = (hd: Seq[((Double, Double), Double)]) => (w:(Double, Double, Double)) => hd.filter{ x =>
+    val point = x._1
+    val historicalClassification = x._2
+    val a = point._1
+    val b = point._2
+    val classification = math.signum( (1.0, a, b) * w )
+    historicalClassification != classification
+  }
+
+  val randomlyPickMissClassifiedPoint: Seq[((Double, Double), Double)] => Option[((Double, Double), Double)] = missClassifiedPoints => {
+    val randomIndex = if (missClassifiedPoints.isEmpty) 1 else nextInt(missClassifiedPoints.size)
+    if (missClassifiedPoints.isDefinedAt(randomIndex)) Some(missClassifiedPoints(randomIndex)) else None
+  }
 
 
+  def start = {
+
+    var continue: Boolean = true
+    val testAgainstHistoricalData = missClassifiedPoints(historicalData)
+
+    val loopCount = loopWhile(continue) {
+
+      val mcps = testAgainstHistoricalData(w)
+      val missClassifiedPoint = randomlyPickMissClassifiedPoint(mcps)
+
+      missClassifiedPoint match {
+        case Some(x) => val point = x._1; val classification = x._2; w = w + ((1.0, point._1, point._2) * classification)
+        case None => continue = false
+      }
+
+    }
+
+    println(loopCount)
+    println(w)
+    println(historicalData)
+
+    historicalData.foreach{x =>
+      val point = x._1
+      val s = (1.0, point._1:Double, point._2: Double) * w
+      val sign = math.signum(s)
+
+      assert(x._2 == sign)
+    }
+
+  }
 
   
 
