@@ -5,6 +5,7 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.{Matchers, FunSpec}
 import org.scalamock.scalatest.MockFactory
 import datascience.Perceptron._
+import grizzled.math.stats._
 
 @RunWith(classOf[JUnitRunner])
 class PerceptronTest extends FunSpec with Matchers with MockFactory  {
@@ -40,27 +41,27 @@ class PerceptronTest extends FunSpec with Matchers with MockFactory  {
 
     it("should generate historical data") {
       val n = 10
-      assert(historicalDataFunction(n).size == n)
+      assert(trainingDataFunction(n).size == n)
     }
 
-    it("should return a list of all missclassified points with regard to historical data") {
+    it("should return a list of all misclassified points with regard to historical data") {
       val n = 100
       val w = (0.0, 0.0, 0.0)
-      val missClassifiedPointsCount = missClassifiedPoints(historicalDataFunction(n))(w).size
+      val misClassifiedPointsCount = findMisclassifiedPoints(trainingDataFunction(n))(w).size
 
-      assert(missClassifiedPointsCount == n)
+      assert(misClassifiedPointsCount == n)
     }
 
-    it("should return a missclassified point") {
-
+    it("should return a misclassified point") {
+      val n = 100
       val w = (0.0, 0.0, 0.0)
-      val mcps = missClassifiedPoints(historicalData)(w)
+      val mcps = findMisclassifiedPoints(trainingDataFunction(n))(w)
 
-      val missClassifiedPoint = randomlyPickMissClassifiedPoint(mcps)
+      val misClassifiedPoint = randomlyPickMisClassifiedPoint(mcps)
 
-      assert (missClassifiedPoint.isDefined)
+      assert (misClassifiedPoint.isDefined)
 
-      println(missClassifiedPoint.get)
+      println(misClassifiedPoint.get)
 
     }
 
@@ -79,9 +80,15 @@ class PerceptronTest extends FunSpec with Matchers with MockFactory  {
       assert(looped == N)
     }
 
-    it("should start") {
-      start
-      assert (1==1)
+    it("should start startPerceptron") {
+      val (loopCount, error) = startPerceptron(maxTrainingDataPoints = 10)
+      assert (loopCount > 0)
+      assert (error >= 0)
+    }
+
+    it("should measure startPerceptron") {
+      val (avrgIterations, avrgError) = runPerceptron(runsN = 10, maxTrainingDataPoints = 100)
+      println(s"avrgIterations = [$avrgIterations] avrgError = [$avrgError]")
     }
 
 

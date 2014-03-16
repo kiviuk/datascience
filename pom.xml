@@ -51,6 +51,20 @@
             <version>3.1</version>
         </dependency>
 
+        <!-- http://www.jfree.org/jfreechart/ -->
+        <dependency>
+            <groupId>org.jfree</groupId>
+            <artifactId>jfreechart</artifactId>
+            <version>1.0.17</version>
+        </dependency>
+
+        <!-- http://software.clapper.org/grizzled-scala/ -->
+        <dependency>
+            <groupId>org.clapper</groupId>
+            <artifactId>grizzled-scala_2.10</artifactId>
+            <version>1.1.4</version>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>junit</groupId>
@@ -75,6 +89,7 @@
             <version>3.1.RC1</version>
             <scope>test</scope>
         </dependency>
+
     </dependencies>
 
     <build>

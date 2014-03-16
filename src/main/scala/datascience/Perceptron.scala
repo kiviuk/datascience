@@ -2,28 +2,29 @@ package datascience
 
 import util.Random._
 import scala.None
-import scala.xml.dtd.SystemID
-import scala.collection.concurrent.RDCSS_Descriptor
+
+import Numeric._
+import grizzled.math.stats._
 
 object Perceptron {
 
-  val maxHistoricalDataPoints = 10
-  var w: (Double, Double, Double) = (0,0,0)
-
-  implicit class TuppleMulti[A: Numeric](t: (A, A, A)) {
+  implicit class TupleOps[A: Numeric](t: (A, A, A)) {
     import Numeric.Implicits._
+    // inner product: tuple * tuple
     def * (p: (A, A, A)) = {
       val v1 = p._1 * t._1
       val v2 = p._2 * t._2
       val v3 = p._3 * t._3
       v1 + v2 + v3
     }
+    // tuple + tuple
     def + (p: (A, A, A)) = {
       val v1 = p._1 + t._1
       val v2 = p._2 + t._2
       val v3 = p._3 + t._3
       (v1, v2, v3)
     }
+    // scalar product: tuple * scalar
     def * (p:A) = {
       val v1 = p * t._1
       val v2 = p * t._2
@@ -44,78 +45,136 @@ object Perceptron {
 
   // Assume X = [-1;1] x [-1;1] with uniform probability of picking each x € X
   val randomPoint = () => {
-    def randomSign: Int = Seq(-1,1)(nextInt(2))
+    def randomSign: Int = Vector(-1,1)(nextInt(2))
     def randomDouble = randomSign * nextDouble()
     (randomDouble, randomDouble)
   }
 
-  val randomPoint1 = (-1, -1)//randomPoint()
-  val randomPoint2 = (1,1)//randomPoint()
-
   // In each run, choose a random line in the plane as your target function f (do this by taking two random, uniformly distributed points
-  // in [1;-1] x [-1;1] and taking the line passing through them), where one side of the line maps to +1 and the other maps  to  1.
-  val targetFunctionF = (x:Double) => {
+  // in [1;-1] x [-1;1] and taking the line passing through them) ...
+  val randomPoint1 = randomPoint()
+  val randomPoint2 = randomPoint()
+  val m = {
     val x1 = randomPoint1._1
     val y1 = randomPoint1._2
     val x2 = randomPoint2._1
     val y2 = randomPoint2._2
-    val m = (y2 - y1) / (x2 - x1)
-    val b = y1 - m * x1
+    (y2 - y1) / (x2 - x1)
+  }
+  val b = {
+    val x1 = randomPoint1._1
+    val y1 = randomPoint1._2
+    y1 - m * x1
+  }
+  val targetFunctionF = (x:Double) => {
     x * m + b
   }
-  val classificationFunction = (point:(Double,Double)) => math.signum( point._2 - targetFunctionF(point._1) )
-
-  val randomTrainingPoints: Int => Seq[(Double,Double)] = (n: Int) => Stream.continually(randomPoint()).take(n).toSeq
-  val historicalDataFunction = (n: Int) => randomTrainingPoints(n).map( (x:(Double,Double)) => (x,classificationFunction(x)) )
-  val historicalData = historicalDataFunction(maxHistoricalDataPoints)
-
-  val missClassifiedPoints = (hd: Seq[((Double, Double), Double)]) => (w:(Double, Double, Double)) => hd.filter{ x =>
-    val point = x._1
-    val historicalClassification = x._2
-    val a = point._1
-    val b = point._2
-    val classification = math.signum( (1.0, a, b) * w )
-    historicalClassification != classification
+  
+  //... , where one side of the line maps to +1 and the other maps  to  1.
+  val classificationFunction = (randomPoint:(Double,Double)) => {
+    val fx = targetFunctionF(randomPoint._1)
+    val y = randomPoint._2
+    if (y>=fx) 1.0 else -1.0
   }
 
-  val randomlyPickMissClassifiedPoint: Seq[((Double, Double), Double)] => Option[((Double, Double), Double)] = missClassifiedPoints => {
-    val randomIndex = if (missClassifiedPoints.isEmpty) 1 else nextInt(missClassifiedPoints.size)
-    if (missClassifiedPoints.isDefinedAt(randomIndex)) Some(missClassifiedPoints(randomIndex)) else None
+  // Choose the inputs xn of the data set as random points (uniformly in X), and evaluate the target function on each xn to get the corresponding output yn
+  val randomTrainingPoints: Int => Vector[(Double,Double)] = (n: Int) => Stream.continually(randomPoint()).take(n).toVector
+  val trainingDataFunction = (n: Int) => randomTrainingPoints(n).map( (x:(Double,Double)) => (x,classificationFunction(x)) )
+  val testDataFunction = (n: Int) => randomTrainingPoints(n).map( (x:(Double,Double)) => (x,classificationFunction(x)) )
+
+  val findMisclassifiedPoints = (hd: Vector[((Double, Double), Double)]) => (weightVector:(Double, Double, Double)) => hd.filter{ trainingData =>
+    val (trainingDataPoint, actualClassification) = trainingData
+    val x0 = 1.0
+    val (x1, x2) = trainingDataPoint
+    val learnedClassification = math.signum( weightVector * (x0, x1, x2) )
+    learnedClassification != actualClassification
   }
 
+  val randomlyPickMisClassifiedPoint: Vector[((Double, Double), Double)] => Option[((Double, Double), Double)] = misClassifiedPoints => {
+    val randomIndex = if ( ! misClassifiedPoints.isEmpty ) nextInt(misClassifiedPoints.size) else -1
+    if (misClassifiedPoints.isDefinedAt(randomIndex)) Some(misClassifiedPoints(randomIndex)) else None
+  }
 
-  def start = {
+  val assertCorrectness = (weightVector:(Double, Double, Double), hd: Vector[((Double, Double), Double)]) => {
+    hd.foreach{ trainingData =>
+      val (trainingDataPoint, actualClassification) = trainingData
+      val x0 = 1.0
+      val (x1, x2) = trainingDataPoint
+      val learnedClassification = math.signum( weightVector * (x0, x1, x2) )
+      assert( learnedClassification == actualClassification )
+    }
+  }
+
+  def testHypothesis:((Double, Double, Double), Vector[((Double, Double), Double)]) => Double = (weightVector, testData) => {
+
+    var mismatches = 0
+
+    testData.foreach{ x =>
+      val (testDataPoint, actualClassification) = x
+
+      val x0 = 1.0
+      val (x1, x2) = testDataPoint
+
+      val learnedClassification = math.signum( weightVector * (x0, x1, x2) )
+
+      if(actualClassification != learnedClassification) {
+        mismatches += 1
+      }
+    }
+
+    val avrgError = mismatches.toDouble / testData.size.toDouble
+
+    avrgError
+  }
+
+  def startPerceptron(maxTrainingDataPoints: Int): (Int, Double) = {
 
     var continue: Boolean = true
-    val testAgainstHistoricalData = missClassifiedPoints(historicalData)
+    var weightVector: (Double, Double, Double) = (0,0,0)
+    val trainingData = trainingDataFunction(maxTrainingDataPoints)
+    val testData = testDataFunction(maxTrainingDataPoints)
 
     val loopCount = loopWhile(continue) {
 
-      val mcps = testAgainstHistoricalData(w)
-      val missClassifiedPoint = randomlyPickMissClassifiedPoint(mcps)
+      val misClassifiedPoints = findMisclassifiedPoints(trainingData)(weightVector)
+      val misClassifiedPoint = randomlyPickMisClassifiedPoint(misClassifiedPoints)
 
-      missClassifiedPoint match {
-        case Some(x) => val point = x._1; val classification = x._2; w = w + ((1.0, point._1, point._2) * classification)
+      // http://www.youtube.com/watch?feature=player_detailpage&v=mbyG85GZ0PI#t=1398
+      misClassifiedPoint match {
+        case Some(x) => val (misclassPoint, actualClassification) = x; weightVector = weightVector + ((1.0, misclassPoint._1, misclassPoint._2) * actualClassification)
         case None => continue = false
       }
 
     }
+    
+    // assertCorrectness(weightVector, historicalData)
+    
+    val error = testHypothesis(weightVector, testData)
 
-    println(loopCount)
-    println(w)
-    println(historicalData)
-
-    historicalData.foreach{x =>
-      val point = x._1
-      val s = (1.0, point._1:Double, point._2: Double) * w
-      val sign = math.signum(s)
-
-      assert(x._2 == sign)
-    }
-
+    (loopCount, error)
   }
 
-  
+  def runPerceptron(runsN: Int, maxTrainingDataPoints: Int): (Double, Double) = {
+    val iterations = new Array[Double](runsN)
+    val errors = new Array[Double](runsN)
+
+    ( 0 to runsN - 1 ).foreach{i =>
+      val (loopCount, error) = startPerceptron(maxTrainingDataPoints)
+      iterations(i) = loopCount.toDouble
+      errors(i) = error
+    }
+
+    val avrgIterations = iterations.sum / runsN
+    val avrgError = errors.sum / runsN
+
+    (avrgIterations, avrgError)
+  }
+
+  def main(args: Array[String]) {
+    val (avrgIterations, avrgError) = runPerceptron(runsN = 1000, maxTrainingDataPoints = 1000)
+
+    println(f"avrgIterations = [$avrgIterations%2.2f] avrgError = [$avrgError%2.2f]")
+  }
 
 }
 
